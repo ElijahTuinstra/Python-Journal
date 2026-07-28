@@ -1,3 +1,13 @@
+"""
+TODO:
+1. Add in logout button that will sit with quit button
+2. Add in password part of program
+3. Add in journal entry part of program. Will save date with journal entry. to pull out journal entry, it will show user
+    a numbered list of entries, found by searching for journal entries in the journal database under the same username as user
+    then will order them into a list (will show like the past 20 most recent ones). user will then enter a number or a name of a
+    journal entry, which will then show user the entry
+
+"""
 # region App Config
 import atexit #used to safely close app suddenly
 import sqlite3 #used to store usernames and journal entries
@@ -42,10 +52,22 @@ pack: I pack all the widgets into frm, which makes them go to the next line inst
 
 signInProcess = None
 active_conn = None
+first_username_attempt = None
+sentErrorMessage = None
 
 # endregion
 
 # region Database Stuff
+def makeDatabaseEntry(database_name, table_name, table_column, entry):
+    conn = sqlite3.connect(f"{database_name}.db")
+    cursor = conn.cursor()
+    
+    query = f"INSERT INTO {table_name} ({table_column}) VALUES (?)"
+    
+    cursor.execute(query, (entry,))
+    conn.commit()
+    conn.close()
+
 def initializeUsernameDatabase(): #database is fed ex warehouse
     """
     NOTE 1: I will be using fed ex as a analogy cus my brains to fried to remember this database stuff any other way.
@@ -67,17 +89,30 @@ def initializeUsernameDatabase(): #database is fed ex warehouse
     """)
     conn.commit() #saves modifications made to the database NOTE: kinda funny to me that they use commit just like github does, or maybe that's common lingo and I'm just too green to know
     conn.close() #exit fedex and close door (without saying goodbye to carla, no less)
-
-def clearUsernameDatabase(): # NOTE NOTE NOTE DELETE LATER ON, ONLY USEFUL IN DEV PHASE
-    conn = sqlite3.connect("username.db") #enter fed ex
+"""
+def clearDatabase(database_name):
+    print(f"{database_name} is being cleared...")
+    conn = sqlite3.connect(f"{database_name}.db") #enter fed ex
     cursor = conn.cursor() #rebirth carla
 
-    cursor.execute("DELETE FROM users") #carla destroys the users shelf's entire contents
+    cursor.execute(f"DELETE FROM {database_name}") #carla destroys the database's contents
 
     conn.commit() #save changes
     conn.close() #leave
 
-    print("Users shelf wiped")
+    print(f"{database_name} has been cleared")
+""" #work on this part later
+def clearDatabaseTable(database_name, table_name):
+    print(f"'{table_name}' table in '{database_name}' is being cleared...")
+    conn = sqlite3.connect(f"{database_name}.db") #enter fed ex
+    cursor = conn.cursor() #rebirth carla
+
+    cursor.execute(f"DELETE FROM {table_name}") #destroys the users shelf's entire contents
+
+    conn.commit() #save changes
+    conn.close() #leave
+
+    print(f"{table_name} table in '{database_name}' has been cleared")
 
 def usernameExistenceCheck(username):
     global active_conn
@@ -134,7 +169,7 @@ def clearAllWidgets(area): #destroys all widgets in the entered area
 
 def unbindAll(area): #unbinds all custom keybinds in given area, ex: root
     for sequence in area.bind():
-        if "Control-f" in sequence: #if F11 is in the sequence
+        if "Control-Key-f" in sequence: #if F11 is in the sequence
             continue #skips over the unbind part
         area.unbind(sequence)
 
@@ -155,31 +190,26 @@ def setupProgram():
     signInProcess = 0
     root.bind("<Control-f>", fullscreenToggle)
 
-def nextSignInStep(event=None):
-    global signInProcess
+def nextSignInStep(step_skip=None, event=None):
+    global signInProcess, sentErrorMessage
+    sentErrorMessage = False
     clearTLF()
-    signInProcess += 1
+    if step_skip == None:
+        signInProcess += 1
+    else:
+        signInProcess += step_skip
     nextSignInPath()
-
-def nextSignInPath():
-    global signInProcess 
-    if signInProcess == 1:
-        introduction()
-    elif signInProcess == 2:
-        preexistingUsernameCheck()
     
 def introduction():
     def ytcon(): #this was a super confusing part to write, sorry in advance if there's excessive comments
-        ytcon_label = tk.Label(tl_frm, text="Y/y to continue") #ycon stands for y-to-continue
+        ytcon_label = tk.Label(tl_frm, text="Y/y to continue.") #ycon stands for y-to-continue
         ytcon_label.pack(anchor="w") #packs in the y to continue message
         ytcon_entry = tk.Entry(tl_frm) #entry box for user to type into
         ytcon_entry.pack(anchor="w")
         ytcon_entry.focus()
 
-        sent_error_message = False
-
         def process_ytcon_input(event):
-            nonlocal sent_error_message
+            global sentErrorMessage
             returned_text = grabInput(event, ytcon_entry) #takes input from the entry box
 
             if returned_text.lower() == "y": #if the returned text, converted into lowercase (so that entering a capitilized Y works too) is y
@@ -187,10 +217,10 @@ def introduction():
                 nextSignInStep() #start process to run next step
             else: #if the returned text isn't y, and 
                 ytcon_entry.delete(0, "end") #clear entry box
-                if not sent_error_message: #if sent_error_message is false (used to avoid sending multiple errors messages
-                    entry_error_label = tk.Label(tl_frm, text="please input a valid answer")
+                if not sentErrorMessage: #if sent_error_message is false (used to avoid sending multiple errors messages
+                    entry_error_label = tk.Label(tl_frm, text="Please input a valid answer.")
                     entry_error_label.pack(anchor="w")
-                    sent_error_message = True
+                    sentErrorMessage = True
 
         root.bind("<Return>", process_ytcon_input)
     
@@ -199,7 +229,7 @@ def introduction():
     ytcon()
 
 def preexistingUsernameCheck():
-    existing_username_check_label = tk.Label(tl_frm, text="Please enter owned or desired username")
+    existing_username_check_label = tk.Label(tl_frm, text="Please enter owned or desired username.")
     existing_username_check_label.pack(anchor="w")
 
     username_entry = tk.Entry(tl_frm) #entry box for user to type into
@@ -210,7 +240,7 @@ def preexistingUsernameCheck():
         entered_username = username_entry.get().strip().lower()
 
         if not entered_username:
-            invalid_username_label = tk.Label(tl_frm, text="username cannot be blank")
+            invalid_username_label = tk.Label(tl_frm, text="Field cannot be blank.")
             invalid_username_label.pack(anchor="w")
             return
 
@@ -218,23 +248,82 @@ def preexistingUsernameCheck():
 
         username_exists = usernameExistenceCheck(entered_username)
         if username_exists:
-            welcome_back_label = tk.Label(tl_frm, text=f"Welcome back {entered_username}")
+            welcome_back_label = tk.Label(tl_frm, text=f"Welcome back {entered_username}.")
             welcome_back_label.pack(anchor="w")
-            #Now go to password entry section
+            root.unbind("<Return>")
+            print("end project")
+            end_label = tk.Label(tl_frm, text=f"end project")
+            end_label.pack(anchor="w")
+            
+            #nextSignInStep(2) #skips to password step NOTE MAY HAVE TO CHANGE NUMBER OF STEPS SKIPPED LATER
         else:
-            nonexistent_username_label = tk.Label(tl_frm, text=f"it doesn't seem like the username '{entered_username}' exists yet")
-            nonexistent_username_label.pack(anchor="w")
+            global first_username_attempt
+            first_username_attempt = entered_username
+            nextSignInStep()
 
 
     root.bind("<Return>", process_username_input)
+
+def confirmNewUsername():
+    confirm_username_label = tk.Label(tl_frm, text="It doesn't seem like that username exists yet. Please re-enter the username to confirm its creation.")
+    confirm_username_label.pack(anchor="w")
+
+    confirm_username_entry = tk.Entry(tl_frm)
+    confirm_username_entry.pack(anchor="w")
+    confirm_username_entry.focus()
+
+    def process_username_confirmation(event):
+        entered_username = confirm_username_entry.get().strip().lower()
+
+        if not entered_username:
+            invalid_username_label = tk.Label(tl_frm, text="Field cannot be blank.")
+            invalid_username_label.pack(anchor="w")
+            return
+
+
+        if entered_username == first_username_attempt:
+            try:
+                makeDatabaseEntry("username", "users", "username", entered_username)
+                username_created_label = tk.Label(tl_frm, text=f"Created username entry for '{entered_username}'.")
+                username_created_label.pack(anchor="w")
+                root.unbind("<Return>")
+                print("end project")
+                end_label = tk.Label(tl_frm, text=f"end project")
+                end_label.pack(anchor="w")
+                #root.after(1500, nextSignInStep)
+            except Exception as e:
+                print(f"Database insertion failed: {e}")
+                database_error_label = tk.Label(tl_frm, text=f"Something went wrong on our side when trying to create a database entry for the username '{entered_username}'. Try again.")
+                database_error_label.pack(anchor="w")
+            
+        else:
+            confirm_username_entry.delete(0, "end")
+            if not sentErrorMessage: #if sent_error_message is false (used to avoid sending multiple errors messages
+                entry_error_label = tk.Label(tl_frm, text="Usernames do not match. Please try again.")
+                entry_error_label.pack(anchor="w")
+                sentErrorMessage = True
+
+
+
+
+    root.bind("<Return>", process_username_confirmation)
+
+def nextSignInPath():
+    global signInProcess 
+    if signInProcess == 1:
+        introduction()
+    elif signInProcess == 2:
+        preexistingUsernameCheck()
+    elif signInProcess == 3:
+        confirmNewUsername()
+
 
 # endregion
 
 quit_button = tk.Button(br_frm, text="Quit", name="doNotDelete", command=root.destroy)
 quit_button.pack(side="right")
-clearUsernameDatabase_button = tk.Button(br_frm, text="Clear Username Database", name="doNotDelete2", command=clearUsernameDatabase)
+clearUsernameDatabase_button = tk.Button(br_frm, text="Clear Username Database", name="doNotDelete2", command=lambda: clearDatabaseTable("username", "users"))
 clearUsernameDatabase_button.pack(side="right")
-
 
 setupProgram()
 nextSignInStep() #kickstarts rest of code

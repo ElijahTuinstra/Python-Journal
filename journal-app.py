@@ -1,17 +1,14 @@
 """
+NOTE(s) TO OTHERS:
+    1.I try to use camel case for global variables and functions (e.g. globalVariableName), and underscores for local variables 
+        and functions (e.g. local_variable_name).
+    2.
 TODO:
-1. Add in logout button that will sit with quit button
-2. Add in password part of program
-3. Add in journal entry part of program. Will save date with journal entry. to pull out journal entry, it will show user
-    a numbered list of entries, found by searching for journal entries in the journal database under the same username as user
-    then will order them into a list (will show like the past 20 most recent ones). user will then enter a number or a name of a
-    journal entry, which will then show user the entry
-
+1. remove print part from introduction/change it to just say "introduction sucessfully completed" when sucessfully completed
 """
 # region App Config
 import atexit #used to safely close app suddenly
 import sqlite3 #used to store usernames and journal entries
-import hashlib #used to store passwords
 import tkinter as tk
 
 root = tk.Tk() #base window
@@ -51,13 +48,78 @@ pack: I pack all the widgets into frm, which makes them go to the next line inst
 """
 
 signInProcess = None
-active_conn = None
 first_username_attempt = None
 sentErrorMessage = None
 
 # endregion
 
-# region Database Stuff
+# region Database Stuff NOTE: SQLite is super confusing, so I've left some extra comments to help you - and future me - out
+def initializeJournalDatabase():
+    """
+    NOTE 1: I'll be using a fed ex (the shipping company) warehouse as an analogy, as it helps in remembering this database stuff
+    NOTE 2, TO OTHER PEOPLE READING THIS: Yes ik that my analogy is corny, but it works for me
+    """
+    conn = sqlite3.connect("journal.db") #open door to fed ex warehouse and enter
+
+    cursor = conn.cursor() #cursor is the worker in fed ex. Imma just name her Carla for easy reference in the future
+
+    """
+    ask Carla to to go look for a book case (table) named users, and if one doesn't exist, to create one. 
+    In this case the shelf (column) is only one box wide, and will gain rows as new entries are made
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL
+        )
+    """)
+    conn.commit() #saves modifications made to the database NOTE: kinda funny to me that they use commit just like github does, or maybe that's common lingo and I'm just too green to know
+    conn.close() #exit fedex and close door (without saying goodbye to carla, no less)
+
+    conn_journal = sqlite3.connect("journal.db")
+    cursor_journal = conn_journal.cursor()
+
+    cursor_journal.execute("""
+    CREATE TABLE IF NOT EXISTS journals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        journal_name TEXT NOT NULL,
+        enciphered_text TEXT NOT NULL,
+        FOREIGN KEY (username) REFERENCES users (username)
+    )
+    """)
+
+    conn_journal.commit()
+    conn_journal.close()
+
+def usernameExistenceCheck(username):
+    conn = sqlite3.connect("journal.db") #enter warehouse
+
+    cursor = conn.cursor() #rebirth Carla
+
+    """
+    #carla will look for row with username on it, and will return "1" if it exists. 
+    # NOTE: 1 can be replaced with any number, or with any word if word is in single quotes ex: 'word'
+    """
+    cursor.execute("SELECT 1 FROM users WHERE username = ?", (username,))
+
+    row = cursor.fetchone() #if username found, set row to 1 as placeholder
+
+    conn.close() #exit fedex
+
+    # if row with username exists, will return a value of "True". if there isn't a row with the username, will return a value of "false" (i.e. username is new).
+    return row is not None
+
+def createNewUsername(new_username):
+    conn = sqlite3.connect("journal.db") #enter warehouse
+    cursor = conn.cursor() #rebirth carla
+
+    query = "INSERT INTO users (username) VALUES (?)" #creates empty row in column 'username' in table 'users'
+
+    cursor.execute(query, (new_username,)) #fills in empty row with the new username
+    conn.commit() #save changes
+    conn.close() #close connection
+
 def makeDatabaseEntry(database_name, table_name, table_column, entry):
     conn = sqlite3.connect(f"{database_name}.db")
     cursor = conn.cursor()
@@ -68,40 +130,55 @@ def makeDatabaseEntry(database_name, table_name, table_column, entry):
     conn.commit()
     conn.close()
 
-def initializeUsernameDatabase(): #database is fed ex warehouse
-    """
-    NOTE 1: I will be using fed ex as a analogy cus my brains to fried to remember this database stuff any other way.
-    NOTE 2, TO OTHER PEOPLE READING THIS: Yes ik that my analogy is corny, but it's hard to remember all the little things okay
-    """
-    conn = sqlite3.connect("username.db") #open door to fed ex warehouse and enter
+def saveJournalEntry(username, journal_entry_name, enciphered_entry):
+    conn = sqlite3.connect("journal.db")
+    cursor = conn.cursor()
 
-    cursor = conn.cursor() #cursor is the worker in fed ex. Imma just name her carla for easy reference in the future
+    query = "INSERT INTO journals (username, journal_name, enciphered_text) VALUES (?, ?, ?)"
 
-    """
-    ask Carla to to go look for a book case named users. Note that in this case, the shelf can be super tall (one shelf per username), 
-    but since we are (currently, as I'm writing this) only storing one thing per username (i.e. their actual username) each row is only one cell long
-    """
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL
-        )
-    """)
-    conn.commit() #saves modifications made to the database NOTE: kinda funny to me that they use commit just like github does, or maybe that's common lingo and I'm just too green to know
-    conn.close() #exit fedex and close door (without saying goodbye to carla, no less)
-"""
-def clearDatabase(database_name):
-    print(f"{database_name} is being cleared...")
-    conn = sqlite3.connect(f"{database_name}.db") #enter fed ex
-    cursor = conn.cursor() #rebirth carla
+    cursor.execute(query, (username, journal_entry_name, enciphered_entry))
+    conn.commit()
+    conn.close()
 
-    cursor.execute(f"DELETE FROM {database_name}") #carla destroys the database's contents
+def clearEntireDatabase(database_name): #used to clear everything inside of a given database's tables
+    print(f"Destroying all data inside of '{database_name}.db'")
 
-    conn.commit() #save changes
-    conn.close() #leave
+    try:
+        conn = sqlite3.connect(f"{database_name}.db") #connect to database
+        cursor = conn.cursor() #rebirth carla
 
-    print(f"{database_name} has been cleared")
-""" #work on this part later
+        """
+        Buckle up boys and girls (and future me probably) because the information I'm about to unload onto you is a tough pill to swallow:
+            Knowledge you need/preface:
+                1.SQLite creates it's own special table called 'sqlite_master' inside every .db file you make using it. 
+                    Inside of 'sqlite_master' SQLite stores info about every Database Object you create (database objects include 
+                    tables, indexes, views, and structural triggers)
+                2.To grab a specific type of database object from 'sqlite_master', you use WHERE type='x'. e.g. WHERE type='table'
+                3.SQLite creates its own private tables that it uses to track various things, and should not be deleted. their tables
+                    ALWAYS start with the prefix: sqlite_
+            
+            Basically the line asks Carla to: 
+            a.return the names(SELECT name)
+            b.that listed in sqlite_master (FROM sqlite_master)
+            c.that are tables (WHERE type='table')
+            d.that are not made my sqlite automatically (AND name NOT LIKE 'sqlite_%')
+        Good lord that took me like half an hour to write, but now at least I (and hopefully you) understand SQLite a little better
+        """
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+
+        tables = cursor.fetchall() #takes names found during the search for tables, and puts them into a python list
+
+        for table in tables: #for each table
+            table_name = table[0] #get table name
+            cursor.execute(f"DELETE FROM {table_name}")
+            print(f"Sucessfully cleared '{table_name}'")
+
+        conn.commit() #save changes
+        conn.close() #close database
+    except Exception as e:
+        print(f"Failed to clear '{e}'")
+    print("cleared")
+
 def clearDatabaseTable(database_name, table_name):
     print(f"'{table_name}' table in '{database_name}' is being cleared...")
     conn = sqlite3.connect(f"{database_name}.db") #enter fed ex
@@ -114,27 +191,8 @@ def clearDatabaseTable(database_name, table_name):
 
     print(f"{table_name} table in '{database_name}' has been cleared")
 
-def usernameExistenceCheck(username):
-    global active_conn
-    conn = sqlite3.connect("username.db") #enter fedex
-
-    cursor = conn.cursor() #remember carla?
-
-    """
-    #carla will look for row with username on it, and will return "1" if it exists. 
-    # NOTE: 1 can be replaced with any number, or with any word if word is in single quotes ex: 'word'
-    """
-    cursor.execute("SELECT 1 FROM users WHERE username = ?", (username,))
-
-    row = cursor.fetchone() #sets row equal to what you got from the cursor.execute part, if you got nothing (i.e. username does not exist), then row will be empty (None)
-
-    conn.close() #exit fedex
-
-    # if row with username exists, will return a value of "True". if there isn't a row with the username, will return a value of "false" (i.e. username is new).
-    return row is not None
-
 def closeDatabases():
-    sql_databases = ["username"]
+    sql_databases = ["journal"]
     i = 0
     while i < len(sql_databases):
         db_name = f"{sql_databases[i]}.db"
@@ -144,7 +202,7 @@ def closeDatabases():
             conn.close()
             print(f"{db_name} closed")
         except Exception:
-            print(f"uh oh, lwk couldn't process {db_name}")
+            print(f"uh oh, lwk couldn't process {db_name}.db")
         i += 1
 
 def clean_up():
@@ -183,7 +241,7 @@ def grabInput(event, entry_widget):
       return user_text
 
 def setupProgram():
-    initializeUsernameDatabase()
+    initializeJournalDatabase()
     global signInProcess
 
     clearTLF()
@@ -204,9 +262,18 @@ def introduction():
     def ytcon(): #this was a super confusing part to write, sorry in advance if there's excessive comments
         ytcon_label = tk.Label(tl_frm, text="Y/y to continue.") #ycon stands for y-to-continue
         ytcon_label.pack(anchor="w") #packs in the y to continue message
+
         ytcon_entry = tk.Entry(tl_frm) #entry box for user to type into
         ytcon_entry.pack(anchor="w")
         ytcon_entry.focus()
+
+        list_of_keybind_label = tk.Label(tl_frm, text="List of Keybinds:")
+        list_of_keybind_label.pack(anchor="w")
+        keybinds = ["control-f: Fullscreen", "enter: submit entry"]
+        for item in keybinds:
+            keybind_list_item_label = tk.Label(tl_frm, text=item)
+            keybind_list_item_label.pack(anchor="w")
+
 
         def process_ytcon_input(event):
             global sentErrorMessage
@@ -237,6 +304,7 @@ def preexistingUsernameCheck():
     username_entry.focus()
 
     def process_username_input(event):
+        global first_username_attempt
         entered_username = username_entry.get().strip().lower()
 
         if not entered_username:
@@ -251,13 +319,8 @@ def preexistingUsernameCheck():
             welcome_back_label = tk.Label(tl_frm, text=f"Welcome back {entered_username}.")
             welcome_back_label.pack(anchor="w")
             root.unbind("<Return>")
-            print("end project")
-            end_label = tk.Label(tl_frm, text=f"end project")
-            end_label.pack(anchor="w")
-            
-            #nextSignInStep(2) #skips to password step NOTE MAY HAVE TO CHANGE NUMBER OF STEPS SKIPPED LATER
+            root.after(1500, lambda: nextSignInStep(2))
         else:
-            global first_username_attempt
             first_username_attempt = entered_username
             nextSignInStep()
 
@@ -283,17 +346,14 @@ def confirmNewUsername():
 
         if entered_username == first_username_attempt:
             try:
-                makeDatabaseEntry("username", "users", "username", entered_username)
+                createNewUsername(entered_username)
                 username_created_label = tk.Label(tl_frm, text=f"Created username entry for '{entered_username}'.")
                 username_created_label.pack(anchor="w")
                 root.unbind("<Return>")
-                print("end project")
-                end_label = tk.Label(tl_frm, text=f"end project")
-                end_label.pack(anchor="w")
-                #root.after(1500, nextSignInStep)
+                root.after(1500, lambda: nextSignInStep())
             except Exception as e:
                 print(f"Database insertion failed: {e}")
-                database_error_label = tk.Label(tl_frm, text=f"Something went wrong on our side when trying to create a database entry for the username '{entered_username}'. Try again.")
+                database_error_label = tk.Label(tl_frm, text=f"Something went wrong when trying to create a username entry for '{entered_username}'. Try again.")
                 database_error_label.pack(anchor="w")
             
         else:
@@ -308,6 +368,24 @@ def confirmNewUsername():
 
     root.bind("<Return>", process_username_confirmation)
 
+def createOrReadEntry():
+    enquiry_cOR_label = tk.Label(tl_frm, text="Press 1 for new journal entry. Press 2 to read previous entries")
+    enquiry_cOR_label.pack(anchor="w")
+
+    confirm_username_entry = tk.Entry(tl_frm)
+    confirm_username_entry.pack(anchor="w")
+    confirm_username_entry.focus()
+
+def newJournalEntry():
+    print("end project so far")
+    end_label = tk.Label(tl_frm, text=f"end project")
+    end_label.pack(anchor="w")
+
+def viewJournalEntries():
+    print("end project so far")
+    end_label = tk.Label(tl_frm, text=f"end project")
+    end_label.pack(anchor="w")
+
 def nextSignInPath():
     global signInProcess 
     if signInProcess == 1:
@@ -316,13 +394,15 @@ def nextSignInPath():
         preexistingUsernameCheck()
     elif signInProcess == 3:
         confirmNewUsername()
+    elif signInProcess == 4:
+        createOrReadEntry()
 
 
 # endregion
 
 quit_button = tk.Button(br_frm, text="Quit", name="doNotDelete", command=root.destroy)
 quit_button.pack(side="right")
-clearUsernameDatabase_button = tk.Button(br_frm, text="Clear Username Database", name="doNotDelete2", command=lambda: clearDatabaseTable("username", "users"))
+clearUsernameDatabase_button = tk.Button(br_frm, text="Clear Journal Database", name="doNotDelete2", command=lambda: clearEntireDatabase("journal"))
 clearUsernameDatabase_button.pack(side="right")
 
 setupProgram()

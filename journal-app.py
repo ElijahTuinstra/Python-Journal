@@ -12,15 +12,31 @@ import string #used to define encryptable characters in the cipher part of code
 root = tk.Tk() #base window
 root.state("zoomed")
 root.title("Python-Journal")
+root.attributes("-fullscreen", True)
 
 root.config(bg="black")
 
+root.option_add("*Background", "black") #black background
+
 root.option_add("*Foreground", "#C9D1D9") #makes light grey text deafult, it's the same color used by github and I like it
 root.option_add("*Entry.insertBackground", "#C9D1D9") #sets color of the blinky line thingy in text boxes
-root.option_add("*Button.activeForeground", "#C9D1D9") #sets color of the text on buttons
 
-root.option_add("*Background", "black") #black background
-root.option_add("*Button.activeBackground", "black") #black button background
+root.option_add("*Button.background", "#2563EB") #blue button background
+root.option_add("*Button.foreground", "#C9D1D9") #sets color of the text on buttons
+
+root.option_add("*Button.activeBackground", "#21585C") #dark blue button background when activated
+
+def button_focus_in(event):
+    if isinstance(event.widget, tk.Button):
+        event.widget.config(bg="#4FD2DB") # Light cyan background on focus
+
+def button_focus_out(event):
+    if isinstance(event.widget, tk.Button):
+        event.widget.config(bg="#2563EB") # Default background on lose focus
+
+root.bind_class("Button", "<FocusIn>", button_focus_in)
+root.bind_class("Button", "<FocusOut>", button_focus_out)
+
 
 
 #allows bottom_frm to be bottom left of root
@@ -35,7 +51,7 @@ push_top_frm = tk.Frame(root, bg="black")
 push_top_frm.pack(side="top", fill="both", expand=True) #pushes to the top
 
 tl_frm = tk.Frame(push_top_frm, bg="black", padx=20, pady=20)
-tl_frm.pack(side="left", anchor= "nw") #pushes left
+tl_frm.pack(side="left", anchor= "nw", fill="both", expand=True) #pushes left
 
 """
 NOTE To whom it may concern: 
@@ -50,6 +66,29 @@ first_username_attempt = None
 current_user_username = None
 sentErrorMessage = None
 sentBlankErrorMessage = None
+
+# region permanent universal key binds
+def fullscreenToggle(event=None):
+    currently_fullscreen = root.attributes("-fullscreen") #returns true if fullscreen, false if not fullscreen
+    root.attributes("-fullscreen", not currently_fullscreen) #switches fullscreen mode on if it's off, and off if it's on
+
+def textTab(event):
+    event.widget.tk_focusNext().focus()
+    return "break"
+
+def textBoxShiftTab(event):
+    event.widget.tk_focusPrev().focus()
+    return "break"
+
+def trigger_button_click(event): #makes it so when button is selected by tab, it can be triggered by enter being pressed
+    event.widget.invoke()
+
+root.bind_class("Text", "<Tab>", textTab)
+root.bind_class("Text", "<Shift-Tab>", textBoxShiftTab)
+root.bind_class("Button", "<Return>", trigger_button_click)
+root.bind_class("TButton", "<Return>", trigger_button_click)
+root.bind("<Control-f>", fullscreenToggle)
+# endregion
 
 # endregion
 
@@ -177,6 +216,14 @@ def saveJournalEntry(username, journal_entry_name, encrypted_entry):
     conn.commit()
     conn.close()
 
+def getAllUserJournalEntries(username):#used to get the names of all journal entries under a given username
+    conn = sqlite3.connect("journal.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT journal_name, encrypted_text FROM journals WHERE username = ?", (username,))
+    entries = cursor.fetchall() # Returns a list of tuples: [('entry_name', 'xyz_encrypted_text'), ...]
+    conn.close()
+    return entries
+
 def clearEntireDatabase(database_name): #used to clear all contents of a given database's tables
     print(f"Destroying all data inside of '{database_name}.db'")
 
@@ -251,14 +298,10 @@ atexit.register(clean_up) #runs upon window being closed, either from user press
 # endregion
 
 # region Program Functions
-def fullscreenToggle(event=None):
-    currently_fullscreen = root.attributes("-fullscreen") #returns true if fullscreen, false if not fullscreen
-    root.attributes("-fullscreen", not currently_fullscreen) #switches fullscreen mode on if it's off, and off if it's on
-
 def clearAllWidgets(area): #destroys all widgets in the entered area
     for widget in area.winfo_children():
             widget_name = str(widget).split(".")[-1]
-            if widget_name.startswith("doNotDelete"): #used to preserve widgets I don't want deleted
+            if widget_name.startswith("donotdelete"): #used to preserve widgets I don't want deleted
                 continue #skips over the forget part
             widget.destroy()
 
@@ -283,7 +326,6 @@ def setupProgram():
 
     clearTLF()
     signInProcess = 0
-    root.bind("<Control-f>", fullscreenToggle)
 
 def nextSignInStep(step_skip, event=None):
     global signInProcess, sentErrorMessage, sentBlankErrorMessage
@@ -307,7 +349,7 @@ def introduction():
 
         list_of_keybind_label = tk.Label(tl_frm, text="List of Keybinds:")
         list_of_keybind_label.pack(anchor="w")
-        keybinds = ["control-f: Fullscreen", "enter: submit entry"]
+        keybinds = ["control-f: Fullscreen", "enter: submit entry/use selected button", "tab: select next field/button", "shift-tab: select previous field/button"]
         for item in keybinds:
             keybind_list_item_label = tk.Label(tl_frm, text=item)
             keybind_list_item_label.pack(anchor="w")
@@ -422,8 +464,11 @@ def confirmNewUsername():
                 sentErrorMessage = True
     
     root.bind("<Return>", process_username_confirmation)
+    back_button = tk.Button(tl_frm, text="Back", command=lambda: nextSignInStep(-1))
+    back_button.pack(anchor="w")
 
 def createOrReadEntry():
+    clearTLF()
     enquiry_create_or_read_label = tk.Label(tl_frm, text="'1' for new journal entry '2' to read previous entries")
     enquiry_create_or_read_label.pack(anchor="w")
 
@@ -470,15 +515,20 @@ def createNewJournalEntry():
     cipher_key = ""
 
     def newJournalName():
+        global sentBlankErrorMessage
+        sentBlankErrorMessage = False
         journal_name_enquiry_label = tk.Label(tl_frm, text=f"What would you like to name your new journal entry?")
         journal_name_enquiry_label.pack(anchor="w")
 
         journal_name_entry = tk.Entry(tl_frm)
-        journal_name_entry.pack(anchor="w")
+        journal_name_entry.pack(anchor="w", fill="x")
         journal_name_entry.insert(0, journal_entry_name)
         journal_name_entry.focus()
 
-        def name_journal(event):
+        def name_journal(event=None):
+            if not journal_name_entry.winfo_exists():#put in here cus it was giving me random errors from this function, and this seems to fix it
+                return
+            global sentBlankErrorMessage
             entered_answer = journal_name_entry.get().strip().lower()
 
             if not entered_answer and not sentBlankErrorMessage: #if entry box is blank, go back
@@ -490,12 +540,15 @@ def createNewJournalEntry():
                 return
             else:
                 root.unbind("<Return>")
+                save_name_button.destroy()
                 nonlocal journal_entry_name
                 journal_entry_name = entered_answer
                 clearTLF()
                 print(f"Sucessfully saved {journal_entry_name} as journal entry name")
                 root.after(1, lambda: journal_entry_text())
 
+        save_name_button = tk.Button(tl_frm, text="Save Journal Name", command= lambda: name_journal())
+        save_name_button.pack(anchor="w")
         root.bind("<Return>", name_journal)
 
     def journal_entry_text():
@@ -509,11 +562,12 @@ def createNewJournalEntry():
         journal_name_display_label.pack(anchor="w")
 
         journal_text_box = tk.Text(tl_frm, height=24, wrap="word")
-        journal_text_box.pack(anchor="w", fill="x", expand=True)
+        journal_text_box.pack(anchor="w", fill="both", expand=True)
         journal_text_box.insert("1.0", plain_journal_entry_text)
         journal_text_box.focus()
 
         def save_journal_entry(event=None):
+            global sentBlankErrorMessage
             entered_answer = journal_text_box.get("1.0", "end-1c")
 
             if not entered_answer and not sentBlankErrorMessage: #if entry box is blank, go back
@@ -532,7 +586,7 @@ def createNewJournalEntry():
                 root.after(1, lambda: chooseCipherKey())
 
         save_entry_button = tk.Button(tl_frm, text="Save and Submit Entry", command= lambda: save_journal_entry())
-        save_entry_button.pack(side="left")
+        save_entry_button.pack(anchor="w")
 
     def chooseCipherKey():
         clearTLF()
@@ -550,13 +604,13 @@ def createNewJournalEntry():
         set_cipher_key_warning_label.pack(anchor="w")
 
         cipher_entry_entry = tk.Entry(tl_frm)
-        cipher_entry_entry.pack(anchor="w")
+        cipher_entry_entry.pack(anchor="w", fill="x")
         cipher_entry_entry.insert(0, cipher_key)
         cipher_entry_entry.focus()
 
         def save_cipher_key(event=None):
             global sentErrorMessage, sentBlankErrorMessage
-            entered_answer = cipher_entry_entry.get().strip().lower()
+            entered_answer = cipher_entry_entry.get().strip()
 
             if not entered_answer and not sentBlankErrorMessage: #if entry box is blank, go back
                 invalid_entry_label = tk.Label(tl_frm, text="Field cannot be blank.", fg="red")
@@ -574,7 +628,7 @@ def createNewJournalEntry():
                 root.after(1, lambda: confirmSaveCommit())
         
         save_cipher_key_button = tk.Button(tl_frm, text="Save Cipher Key", command= lambda: save_cipher_key())
-        save_cipher_key_button.pack(side="left")
+        save_cipher_key_button.pack(anchor="w")
 
     def confirmSaveCommit():
         clearTLF()
@@ -690,10 +744,106 @@ def createNewJournalEntry():
 
     newJournalName()
 
-def viewJournalEntries():
-    print("not created yet. WIP")
-    end_label = tk.Label(tl_frm, text=f"not created yet")
-    end_label.pack(anchor="w")
+def viewJournalEntry(): #no comments on this function, good luck XD (I believe in you)
+    def selectJournalEntry():
+        global current_user_username
+
+        print("Listing user's entries")
+        previous_journal_entries_label = tk.Label(tl_frm, text=f"Previous journal entries made by '{current_user_username}'. Use up and down arrow keys to select different journal entries, and double click or hit enter with a entry focused to move forward")
+        previous_journal_entries_label.pack(anchor="w")
+
+        entry_names_list = getAllUserJournalEntries(current_user_username)
+
+        if not entry_names_list:
+            no_previous_journal_entries_label = tk.Label(tl_frm, text=f"Nothing to show for previous journal entries made by '{current_user_username}'")
+            no_previous_journal_entries_label.pack(anchor="w")
+            back_button = tk.Button(tl_frm, text="Back", command=lambda: nextSignInStep(-2))
+            back_button.pack(anchor="w")
+            back_button.focus()
+            return
+
+        previous_entries_listbox = tk.Listbox(tl_frm, takefocus=True)
+        previous_entries_listbox.pack(fill="both", expand = True)
+        for item in entry_names_list:
+            entry_name = item[0]
+            previous_entries_listbox.insert(tk.END, entry_name)
+
+        previous_entries_listbox.select_set(0)
+        previous_entries_listbox.event_generate("<<ListboxSelect>>")
+        previous_entries_listbox.focus_set() 
+
+        def journal_entry_select(event=None):
+            selected_index = previous_entries_listbox.curselection()
+            if not selected_index:
+                return
+            chosen_entry_row = int(selected_index[0])
+            chosen_entry_name = previous_entries_listbox.get(chosen_entry_row)
+            chosen_entry_contents = entry_names_list[chosen_entry_row]
+            print(f"retrieved data from '{chosen_entry_row}' journal entry")
+            decodeChosenEntry(chosen_entry_name, chosen_entry_contents)
+        
+        previous_entries_listbox.bind("<Return>", journal_entry_select)
+        previous_entries_listbox.bind("<Double-Button-1>", journal_entry_select)
+
+        back_button = tk.Button(tl_frm, text="Back", command=lambda: nextSignInStep(-2))
+        back_button.pack(anchor="w")
+
+    def decodeChosenEntry(chosen_entry_name, chosen_entry_contents):
+        clearTLF()
+        global current_user_username
+
+        current_user_label = tk.Label(tl_frm, text=f"Current username:{current_user_username}")
+        current_user_label.pack(anchor="w")
+
+        current_journal_entry_label = tk.Label(tl_frm, text=f"Chosen journal entry:{chosen_entry_name}")
+        current_journal_entry_label.pack(anchor="w")
+
+        enter_cipher_key_label = tk.Label(tl_frm, text="Please enter cipher key to decode chosen journal entry")
+        enter_cipher_key_label.pack(anchor="w")
+
+        cipher_key_entry = tk.Entry(tl_frm)
+        cipher_key_entry.pack(anchor="w", fill="x")
+        cipher_key_entry.focus()
+
+        back_button = tk.Button(tl_frm, text="Back", command=lambda: nextSignInStep(-2))
+
+        def process_cipher_key(event=None):
+            global sentErrorMessage, sentBlankErrorMessage
+            entered_answer = cipher_key_entry.get().strip()
+
+            if not entered_answer and not sentBlankErrorMessage:
+                invalid_entry_label = tk.Label(tl_frm, text="Field cannot be blank.", fg="red")
+                invalid_entry_label.pack(anchor="w")
+                sentBlankErrorMessage = True 
+                return
+            elif not entered_answer and sentBlankErrorMessage:
+                return
+            else:
+                confirm_cipher_key_button.destroy()
+                back_button.pack_forget()
+                encrypted_text = chosen_entry_contents[1]
+                decrypted_contents = vigenereCipher(encrypted_text, entered_answer, "d")
+                clearTLF()
+                print(f"Sucessfully deciphered {chosen_entry_name}")
+
+                decoded_title = tk.Label(tl_frm, text=f"Journal Entry:'{chosen_entry_name}':")
+                decoded_title.pack(anchor="w")
+
+                display_box = tk.Text(tl_frm, height=20, wrap="word")
+                display_box.pack(anchor="w", fill="x")
+                display_box.insert("1.0", decrypted_contents)
+
+                final_back_button = tk.Button(tl_frm, text="Back", command=lambda: nextSignInStep(-2))
+                final_back_button.pack(anchor="w")
+
+        cipher_key_entry.bind("<Return>", process_cipher_key)
+
+        confirm_cipher_key_button = tk.Button(tl_frm, text="Confirm Cipher Key", command= lambda: process_cipher_key())
+        confirm_cipher_key_button.pack(anchor="w")
+        
+        back_button.pack(anchor="w")
+
+    selectJournalEntry()
 
 def nextSignInPath():
     global signInProcess 
@@ -708,17 +858,17 @@ def nextSignInPath():
     elif signInProcess == 5:
         createNewJournalEntry()
     elif signInProcess == 6:
-        viewJournalEntries()  
+        viewJournalEntry()  
     else:
         clearTLF()
-        print("oopsies")
+        print("Next path is NOT in nextSignInPath. So something went wrong :(")
 # endregion
 
 # region Ran Code
 quit_button = tk.Button(br_frm, text="Quit", name="donotdelete_quit", command=root.destroy)
 quit_button.pack(side="right")
-clearUsernameDatabase_button = tk.Button(br_frm, text="Clear Journal Database", name="donotdelete_clear", command=lambda: clearEntireDatabase("journal"))
-clearUsernameDatabase_button.pack(side="right")
+clearUsernameDatabase_button = tk.Button(br_frm, text="Clear Journal Database.", name="donotdelete_clear", command=lambda: clearEntireDatabase("journal"))
+#clearUsernameDatabase_button.pack(side="right") #commented out to prevent person from accidentally deleting their whole database
 
 setupProgram()
 nextSignInStep(1) #kickstarts rest of code
